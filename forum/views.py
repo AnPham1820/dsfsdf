@@ -626,57 +626,58 @@ def vote_post(request, post_id):
         return redirect('forum:post_detail', post_id=post_id)
     
     user_id = request.session['user_id']
-    vote_value = request.POST.get('vote_value')
-    
-    # Validate vote_value
     try:
-        vote_value = int(vote_value)
+        vote_value = int(request.POST.get('vote_value'))
         if vote_value not in (1, -1):
             raise ValueError
     except (ValueError, TypeError):
-        messages.error(request, 'Giá trị vote không hợp lệ')
         return redirect('forum:post_detail', post_id=post_id)
     
     with connection.cursor() as cursor:
-        # Kiểm tra post tồn tại
-        cursor.execute("SELECT id FROM posts WHERE id = %s", [post_id])
-        if not cursor.fetchone():
+        # 1. Kiểm tra post tồn tại
+        cursor.execute("SELECT id, author_id, is_rewarded FROM posts WHERE id = %s", [post_id])
+        post_row = cursor.fetchone()
+        if not post_row:
             raise Http404("Bài viết không tồn tại")
         
-        # Kiểm tra user đã vote chưa
-        cursor.execute("""
-            SELECT vote_value FROM votes 
-            WHERE voter_id = %s AND post_id = %s
-        """, [user_id, post_id])
+        author_id = post_row[1]
+        is_rewarded = post_row[2]
         
+        # 2. Xử lý Vote (Logic cũ giữ nguyên hoặc tối ưu hóa)
+        cursor.execute("SELECT vote_value FROM votes WHERE voter_id = %s AND post_id = %s", [user_id, post_id])
         existing_vote = cursor.fetchone()
         
         if existing_vote:
-            # Nếu đã vote
             if existing_vote[0] == vote_value:
-                # Nếu vote giống nhau -> xóa vote (toggle)
-                cursor.execute("""
-                    DELETE FROM votes 
-                    WHERE voter_id = %s AND post_id = %s
-                """, [user_id, post_id])
-                messages.info(request, 'Đã hủy vote')
+                cursor.execute("DELETE FROM votes WHERE voter_id = %s AND post_id = %s", [user_id, post_id])
             else:
-                # Nếu khác -> update vote
-                cursor.execute("""
-                    UPDATE votes
-                    SET vote_value = %s 
-                    WHERE voter_id = %s AND post_id = %s
-                """, [vote_value, user_id, post_id])
-                messages.success(request, 'Đã cập nhật vote')
+                cursor.execute("UPDATE votes SET vote_value = %s WHERE voter_id = %s AND post_id = %s", [vote_value, user_id, post_id])
         else:
-            # Chưa vote -> insert mới
-            cursor.execute("""
-                INSERT INTO votes (vote_value, voter_id, post_id)
-                VALUES (%s, %s, %s)
-            """, [vote_value, user_id, post_id])
-            messages.success(request, 'Đã vote thành công')
-    
-    
+            cursor.execute("INSERT INTO votes (vote_value, voter_id, post_id) VALUES (%s, %s, %s)", [vote_value, user_id, post_id])
+            
+        # --- LOGIC MỚI: XỬ LÝ CỘNG COIN (VÍ ẢO) ---
+        
+        # 3. Tính tổng điểm hiện tại (Score = Upvote - Downvote)
+        cursor.execute("SELECT COALESCE(SUM(vote_value), 0) FROM votes WHERE post_id = %s", [post_id])
+        current_score = cursor.fetchone()[0]
+        
+        # 4. Kiểm tra điều kiện thưởng
+        # Điều kiện: Điểm >= 5 VÀ Bài viết chưa từng được thưởng (is_rewarded == 0)
+        if current_score >= 5 and is_rewarded == 0:
+            # 4.1 Cộng 10 coin vào ví ảo của tác giả
+            cursor.execute("UPDATE users SET coin = coin + 10 WHERE id = %s", [author_id])
+            
+            # 4.2 Đánh dấu bài viết đã nhận thưởng (để không cộng lại lần sau)
+            cursor.execute("UPDATE posts SET is_rewarded = 1 WHERE id = %s", [post_id])
+            
+            # (Tùy chọn) Gửi thông báo nếu người vote chính là tác giả
+            if user_id == author_id:
+                messages.success(request, 'Chúc mừng! Bài viết đạt 5 điểm, bạn nhận được 10 coin.')
+                
+            # LƯU Ý: Đây là giao dịch trên "Ví ảo" (Database). 
+            # Nếu bạn muốn thực hiện giao dịch Blockchain thật (gọi hàm mint/transfer của Smart Contract),
+            # bạn sẽ chèn code Web3.py vào đây để gọi contract SimpleToken.
+
     return redirect('forum:post_detail', post_id=post_id)
 
 

@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -38,14 +40,20 @@ INSTALLED_APPS = [
     "forum",
     "home",
     "search",
+    "api",
+    
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
 
     "django.contrib.messages",
-    "django.contrib.staticfiles"
+    "django.contrib.staticfiles",
+    "rest_framework",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -133,3 +141,10 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = FILE_UPLOAD_MAX_MEMORY_SIZE
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+load_dotenv()
+GOOGLE_API_KEY=os.environ.get("GOOGLE_API_KEY")
+if not GOOGLE_API_KEY:
+    print("CẢNH BÁO: Vẫn chưa tìm thấy OPENAI_API_KEY!")
+else:
+    print(f"Đã tìm thấy API Key: {GOOGLE_API_KEY[:5]}...")
